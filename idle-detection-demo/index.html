@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idle Detection Demo · 空闲/活跃/锁屏监控</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #182134;
+    --panel2: #101828;
+    --border: #2a3a55;
+    --text: #dbe4f3;
+    --muted: #8b98b3;
+    --active: #2fbf71;
+    --idle: #f5a623;
+    --locked: #e14b5a;
+    --accent: #4f8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    max-width: 1080px; margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .banner {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .state-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--muted); flex: none; }
+  .state-text { font-size: 28px; font-weight: 700; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.on { color: #0f1420; background: var(--active); border-color: var(--active); font-weight: 600; }
+  .badge.warn { color: #0f1420; background: var(--idle); border-color: var(--idle); font-weight: 600; }
+  .badge.err { color: #fff; background: var(--locked); border-color: var(--locked); font-weight: 600; }
+  .alert {
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+    border: 1px solid; display: none;
+  }
+  .alert.show { display: block; }
+  .alert.err { border-color: var(--locked); background: rgba(225,75,90,.12); color: #ffb3ba; }
+  .alert.warn { border-color: var(--idle); background: rgba(245,166,35,.1); color: #ffd9a0; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 14px; cursor: pointer;
+  }
+  button.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 14px;
+  }
+  label { font-size: 13px; color: var(--muted); }
+  canvas { display: block; width: 100%; border-radius: 8px; background: var(--panel2); }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .kv:last-child { border-bottom: none; }
+  .kv b { font-weight: 600; }
+  #log {
+    height: 180px; overflow-y: auto; font-family: Consolas, monospace; font-size: 12px;
+    background: var(--panel2); border-radius: 8px; padding: 10px; margin: 0;
+    white-space: pre-wrap;
+  }
+  #log .t { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Idle Detection 监控台</h1>
+<div class="sub">Idle Detection API + Permissions API + PerformanceObserver + Canvas + DOM · 不支持时自动降级为事件驱动的活跃检测</div>
+
+<div id="alertInsecure" class="alert err">当前不是安全上下文（非 HTTPS / localhost），Idle Detection API 不可用。已自动切换到基于事件的降级检测。</div>
+<div id="alertUnsupported" class="alert warn">当前浏览器不支持 Idle Detection API（需要 Chromium 94+）。已自动切换到基于事件的降级检测（无法感知锁屏）。</div>
+<div id="alertDenied" class="alert err">idle-detection 权限被拒绝。可在浏览器站点设置中重新允许，或继续使用降级检测。</div>
+<div id="alertGesture" class="alert warn">权限申请必须由用户交互（点击按钮）触发，脚本直接调用会被浏览器拒绝。</div>
+
+<div class="panel banner">
+  <div id="stateDot" class="state-dot"></div>
+  <div>
+    <div id="stateText" class="state-text">未启动</div>
+    <div id="stateSince" class="sub" style="margin:0"></div>
+  </div>
+  <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap">
+    <span id="modeBadge" class="badge">模式: 未启动</span>
+    <span id="permBadge" class="badge">权限: 未知</span>
+    <span id="degradeBadge" class="badge">降级: 未激活</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>控制</h2>
+  <div class="controls">
+    <button id="btnStart">申请权限并开始监听</button>
+    <button id="btnFallback" class="secondary">使用降级方案(事件检测)</button>
+    <button id="btnStop" class="secondary" disabled>停止</button>
+    <label>空闲阈值
+      <select id="threshold">
+        <option value="60000" selected>60 秒(API 最小值)</option>
+        <option value="15000">15 秒(仅降级模式)</option>
+        <option value="5000">5 秒(仅降级模式, 便于测试)</option>
+      </select>
+    </label>
+    <button id="btnClear" class="secondary">清空时间线</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>状态时间线(最近 5 分钟, 半透明为待确认的抖动状态)</h2>
+  <canvas id="timeline" height="90"></canvas>
+  <div class="legend">
+    <span><i style="background:var(--active)"></i>活跃 active</span>
+    <span><i style="background:var(--idle)"></i>空闲 idle</span>
+    <span><i style="background:var(--locked)"></i>锁屏 locked</span>
+    <span><i style="background:#5a6a85"></i>标签页后台</span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>动画(空闲时自动降频)</h2>
+    <canvas id="stage" height="160"></canvas>
+    <div class="kv"><span>渲染帧率</span><b id="fpsText">-</b></div>
+    <div class="kv"><span>目标帧间隔</span><b id="frameBudgetText">-</b></div>
+  </div>
+  <div class="panel">
+    <h2>轮询(空闲时自动暂停)</h2>
+    <div class="kv"><span>轮询状态</span><b id="pollState">运行中</b></div>
+    <div class="kv"><span>成功次数</span><b id="pollCount">0</b></div>
+    <div class="kv"><span>跳过次数(空闲)</span><b id="pollSkipped">0</b></div>
+    <div class="kv"><span>最近结果</span><b id="pollLast">-</b></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>主线程健康(PerformanceObserver)</h2>
+    <div class="kv"><span>长任务(&gt;50ms)次数</span><b id="ltCount">0</b></div>
+    <div class="kv"><span>最长任务</span><b id="ltMax">-</b></div>
+    <div class="kv"><span>最近长任务</span><b id="ltLast">-</b></div>
+    <div class="kv"><span>评估</span><b id="ltVerdict">良好</b></div>
+  </div>
+  <div class="panel">
+    <h2>事件日志</h2>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
