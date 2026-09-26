@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Idle Detection 监控台</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Idle Detection 监控台</h1>
+    <p class="subtitle">Idle Detection API + Permissions API + PerformanceObserver + Canvas</p>
+  </header>
+
+  <!-- 环境 / 能力提示区 -->
+  <section id="banners" aria-live="polite"></section>
+
+  <main>
+    <!-- 状态卡片 -->
+    <section class="card status-card">
+      <h2>当前状态</h2>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">用户状态</span>
+          <span id="user-state" class="state-badge state-unknown">未知</span>
+        </div>
+        <div class="status-item">
+          <span class="label">屏幕状态</span>
+          <span id="screen-state" class="state-badge state-unknown">未知</span>
+        </div>
+        <div class="status-item">
+          <span class="label">检测模式</span>
+          <span id="detect-mode" class="state-badge state-unknown">未启动</span>
+        </div>
+        <div class="status-item">
+          <span class="label">权限状态</span>
+          <span id="permission-state" class="state-badge state-unknown">未查询</span>
+        </div>
+      </div>
+      <div class="controls">
+        <label>
+          空闲阈值
+          <select id="threshold-select">
+            <option value="60000" selected>60 秒（API 最小值）</option>
+            <option value="120000">2 分钟</option>
+            <option value="300000">5 分钟</option>
+            <option value="15000">15 秒（仅降级模式）</option>
+          </select>
+        </label>
+        <button id="btn-start" type="button">申请权限并开始监听</button>
+        <button id="btn-stop" type="button" disabled>停止监听</button>
+      </div>
+      <p id="gesture-hint" class="hint" hidden>⚠️ 权限申请必须由用户交互触发，请点击按钮（不要通过脚本自动调用）。</p>
+    </section>
+
+    <!-- 时间线 -->
+    <section class="card">
+      <h2>状态时间线（最近 5 分钟）</h2>
+      <canvas id="timeline" width="960" height="120"></canvas>
+      <div class="legend">
+        <span><i class="dot dot-active"></i>活跃</span>
+        <span><i class="dot dot-idle"></i>空闲</span>
+        <span><i class="dot dot-locked"></i>锁屏</span>
+        <span><i class="dot dot-hidden"></i>后台标签页</span>
+        <span><i class="dot dot-unknown"></i>未知</span>
+      </div>
+    </section>
+
+    <!-- 降级行为演示 -->
+    <section class="card">
+      <h2>空闲降级演示</h2>
+      <div class="demo-grid">
+        <div>
+          <h3>动画（空闲时降帧）</h3>
+          <canvas id="anim" width="440" height="180"></canvas>
+          <p>当前帧率：<strong id="fps-label">—</strong>（目标 <span id="fps-target">60</span> FPS）</p>
+        </div>
+        <div>
+          <h3>轮询（空闲时暂停）</h3>
+          <p>轮询状态：<strong id="poll-state">运行中</strong>，已发起 <span id="poll-count">0</span> 次</p>
+          <ul id="poll-log" class="poll-log"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 主线程健康 -->
+    <section class="card">
+      <h2>主线程健康（PerformanceObserver / longtask）</h2>
+      <p>长任务（&gt;50ms）数量：<strong id="longtask-count">0</strong>，累计阻塞：<strong id="longtask-total">0</strong> ms</p>
+      <p id="mainthread-verdict" class="hint">主线程流畅 ✅</p>
+    </section>
+
+    <!-- 事件日志 -->
+    <section class="card">
+      <h2>事件日志</h2>
+      <ul id="event-log" class="event-log"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
